@@ -3,6 +3,8 @@ package xpt.mockStudy;
 import utest.Assert;
 import xpt.mockStudy.MockEntireStudy.Params;
 import xpt.mockStudy.MockEntireStudy.SJ;
+import xpt.mockStudy.MockEntireStudy.SJevent;
+import xpt.mockStudy.MockEntireStudy.TransmissionManager;
 import xpt.mockStudy.Scheduler.Plan;
 
 class Test_MockEntireStudy
@@ -24,6 +26,32 @@ class Test_MockEntireStudy
 		}
 		
 		Assert.isTrue(fail == 1);
+		
+		var counter:Map<SJevent,Int> = [SJevent.GetStimulus =>0, SJevent.ReturnStimulus =>0];
+		function callback(_sj:SJ, event:SJevent, data:Map<String,Dynamic>) {
+			counter.set(event, counter.get(event) + 1);
+		}
+		
+		var sj:SJ = new SJ(callback, 0);
+		sj.numAssessments = 2;
+		sj.requestStimulus();
+		
+		Assert.equals(counter.get(SJevent.GetStimulus), 1);
+		Assert.equals(counter.get(SJevent.ReturnStimulus), 0);
+		
+		sj.doneRatingPing(null);
+		Assert.equals(sj.ratingId, 1);
+		Assert.equals(counter.get(SJevent.GetStimulus), 2);
+		Assert.equals(counter.get(SJevent.ReturnStimulus), 1);
+		
+		sj.doneRatingPing(null);
+		Assert.equals(sj.ratingId, 2);
+		Assert.equals(counter.get(SJevent.ReturnStimulus), 2);
+		Assert.equals(counter.get(SJevent.GetStimulus), 2);
+		
+		Assert.raises(function(){
+			sj.doneRatingPing(null);
+		});
 	}
 	
 	public function test_populate_scedule1() {
@@ -93,11 +121,13 @@ class Test_MockEntireStudy
 		var sj_count:Int = 2;
 		
 		var callback_count:Int = 0;
-		var last_plan:Plan;
+		var last_plan:Plan = null;
 
-		function callback(_sj:SJ) {
-			callback_count++;
-			last_plan = _sj.currentPlan;
+		function callback(_sj:SJ, sjEvent:SJevent, data:Map<String,Dynamic>) {
+			if(sjEvent == SJevent.ReturnStimulus){
+				callback_count++;
+				last_plan = _sj.currentPlan;
+			}
 		}
 		
 		
@@ -111,6 +141,7 @@ class Test_MockEntireStudy
 		var s:Scheduler = MockEntireStudy.populate_scedule(params, SJs);
 		
 		MockEntireStudy.run(s, params);
+
 		Assert.isTrue(callback_count == 10);
 		Assert.isTrue(last_plan.minute == 135);
 
@@ -121,11 +152,13 @@ class Test_MockEntireStudy
 		var sj_count:Int = 20;
 		
 		var callback_count:Int = 0;
-		var last_plan:Plan;
+		var last_plan:Plan = null;
 
-		function callback(_sj:SJ) {
-			callback_count++;
-			last_plan = _sj.currentPlan;
+		function callback(_sj:SJ, sjEvent:SJevent, data:Map<String,Dynamic>) {
+			if(sjEvent == SJevent.ReturnStimulus){
+				callback_count++;
+				last_plan = _sj.currentPlan;
+			}
 		}		
 		
 		var params:Params = new Params();
@@ -143,9 +176,49 @@ class Test_MockEntireStudy
 		
 		MockEntireStudy.run(s, params);
 		Assert.isTrue(callback_count == (sj_count - dontFinishStudy) * params.assessments_per_SJ);
-		trace(last_plan.minute);
-
+	}
+	
+	public function test_TransmissionManager() {
+	
+		var params:Params = new Params();
+		params.assessments_per_SJ = 5;
+		params.numSJs = 5;
+		params.sendDataPercentageFailureRate = 0;
+		params.retrieveDataPercentFailureRate = 0;
 		
+		var t:TransmissionManager = new TransmissionManager(params);
+		
+		for (count in 0...t.returnPool.length) {
+			Assert.isTrue(t.returnPool[count] == true && t.getPool[count] == true );
+		}
+		
+		params.assessments_per_SJ = 25;
+		params.numSJs = 4;
+		params.sendDataPercentageFailureRate = 10;
+		params.retrieveDataPercentFailureRate = 20;
+		
+		t = new TransmissionManager(params);
+		
+		var returnFails:Int = 0;
+		var returnSuccesses:Int = 0;
+		var getFails:Int = 0;
+		var getSuccesses:Int = 0;
+		
+		Assert.equals(t.returnPool.length, 100);
+		Assert.equals(t.getPool.length, 100);
+		
+		for (count in 0...t.returnPool.length) {
+			if (t.returnPool[count] == true) returnSuccesses++;
+			else returnFails++;
+			
+			if (t.getPool[count] == true) getSuccesses++;
+			else getFails++;
+		}
+		
+		Assert.equals(returnFails, 10);
+		Assert.equals(returnSuccesses, 90);
+		Assert.equals(getFails, 20);
+		Assert.equals(getSuccesses, 80);
 	}
 }
 
